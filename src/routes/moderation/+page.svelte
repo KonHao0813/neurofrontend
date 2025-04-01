@@ -4,7 +4,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import {Send} from "lucide-svelte";
 
-	import { socket, blacklist } from "../socketio";
+	import { socket, blacklist } from "../../lib/socketio";
 
 	function submitBlacklist() {
 		let data = $blacklist.split("\n")

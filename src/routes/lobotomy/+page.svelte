@@ -4,7 +4,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import {Send, Trash2} from "lucide-svelte";
 	import {Input} from "$lib/components/ui/input";
-	import { socket, lobotomy, customPrompt, priority } from "../socketio";
+	import { socket, lobotomy, customPrompt, priority } from "../../lib/socketio";
 
 	function nukeHistory() {
 		socket.emit("nuke_history");

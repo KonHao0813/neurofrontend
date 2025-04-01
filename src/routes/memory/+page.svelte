@@ -7,7 +7,7 @@
 	import {Input} from "$lib/components/ui/input";
 	import {Trash2, FileDown, FileUp, Search, Send} from "lucide-svelte";
 
-	import { socket, memories, searchQuery } from "../socketio";
+	import { socket, memories, searchQuery } from "../../lib/socketio";
 
 	function getMemories() {
 		socket.emit("get_memories", $searchQuery);

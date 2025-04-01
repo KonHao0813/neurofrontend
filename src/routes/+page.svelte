@@ -10,9 +10,25 @@
 	import * as Select from "$lib/components/ui/select";
 	import { type Props } from "$lib/components/ui/button/.";
 
-	import {BrainCircuit, CircleOff, VolumeX, MicOff, Move, Play, Sparkles, Send, XOctagon, Pause, PlayCircle} from "lucide-svelte";
+	import {
+		BrainCircuit,
+		CircleOff,
+		VolumeX,
+		MicOff,
+		Move,
+		Play,
+		Sparkles,
+		Send,
+		XOctagon,
+		Pause,
+		PlayCircle,
+		Eye,
+		Smile,
+		Frown
+	} from "lucide-svelte";
 
-	import { socket,
+	import {
+		socket,
 		currentMessage,
 		nextMessage,
 		AI_thinking,
@@ -28,7 +44,16 @@
 		multimodalEnabled,
 		movementEnabled,
 		selectedAudio,
-		songs} from "./socketio";
+		songs,
+		chineseMessage,
+		chineseResponse,
+		vtuberStatus,
+		sendChineseText,
+		triggerVtuberAction
+	} from "../lib/socketio";
+
+	// 中文消息輸入
+	let chineseInput = "";
 
 	//Current Message Section
 	function abortMessage() {
@@ -42,7 +67,7 @@
 
 	//Twitch Chat Section
 	function toggleTwitchChat() {
-		twitchChatEnabled.set(! $twitchChatEnabled);
+		twitchChatEnabled.set(!$twitchChatEnabled);
 		if ($twitchChatEnabled) {
 			socket.emit("enable_twitch");
 		} else {
@@ -60,7 +85,7 @@
 	let movementVariant: Props['variant'];
 	$: movementVariant = $movementEnabled ? "default" : "destructive";
 	function toggleLLM() {
-		LLMEnabled.set(! $LLMEnabled);
+		LLMEnabled.set(!$LLMEnabled);
 		if ($LLMEnabled) {
 			socket.emit("enable_LLM");
 		} else {
@@ -68,7 +93,7 @@
 		}
 	}
 	function toggleTTS() {
-		TTSEnabled.set(! $TTSEnabled);
+		TTSEnabled.set(!$TTSEnabled);
 		if ($TTSEnabled) {
 			socket.emit("enable_TTS");
 		} else {
@@ -76,7 +101,7 @@
 		}
 	}
 	function toggleSTT() {
-		STTEnabled.set(! $STTEnabled);
+		STTEnabled.set(!$STTEnabled);
 		if ($STTEnabled) {
 			socket.emit("enable_STT");
 		} else {
@@ -84,7 +109,7 @@
 		}
 	}
 	function toggleMovement() {
-		movementEnabled.set(! $movementEnabled);
+		movementEnabled.set(!$movementEnabled);
 		if ($movementEnabled) {
 			socket.emit("enable_movement");
 		} else {
@@ -92,7 +117,7 @@
 		}
 	}
 	function toggleMultimodal() {
-		multimodalEnabled.set(! $multimodalEnabled);
+		multimodalEnabled.set(!$multimodalEnabled);
 		if ($multimodalEnabled) {
 			socket.emit("enable_multimodal");
 		} else {
@@ -123,6 +148,14 @@
 		socket.emit("new_topic", topic);
 		topic = "";
 	}
+
+	// 發送中文消息
+	function sendChineseMessage() {
+		if (chineseInput.trim()) {
+			sendChineseText(chineseInput);
+			chineseInput = "";
+		}
+	}
 </script>
 
 <div class="w-full h-full flex border-t-2">
@@ -149,6 +182,32 @@
 			</Card.Content>
 			<Card.Footer>
 				<Button variant="destructive" on:click={cancelMessage}>Cancel Message</Button>
+			</Card.Footer>
+		</Card.Root>
+
+		<!-- 新增中文消息卡片 -->
+		<Card.Root class="xl:w-[480px] grow flex flex-col">
+			<Card.Header>
+				<Card.Title>中文消息</Card.Title>
+				<Card.Description>中文對話介面</Card.Description>
+			</Card.Header>
+			<Card.Content class="grow">
+				<Textarea 
+					placeholder="輸入中文消息" 
+					class="resize-none h-[100px]" 
+					bind:value={chineseInput}
+					on:keydown={(e) => e.key === 'Enter' && sendChineseMessage()}
+				/>
+				<div class="mt-2 p-2 border rounded">
+					<div class="text-sm text-gray-500">AI回復:</div>
+					<div>{$chineseResponse}</div>
+				</div>
+			</Card.Content>
+			<Card.Footer>
+				<Button on:click={sendChineseMessage}>
+					<Send class="mr-2 h-4 w-4" />
+					發送中文消息
+				</Button>
 			</Card.Footer>
 		</Card.Root>
 	</div>
@@ -289,5 +348,40 @@
 				</Button>
 			</Card.Footer>
 		</Card.Root>
+
+		<!-- 新增VTuber控制卡片 -->
+		<Card.Root class="w-[480px]">
+			<Card.Header>
+				<Card.Title>VTuber控制</Card.Title>
+				<Card.Description>虛擬形象動作控制</Card.Description>
+			</Card.Header>
+			<Card.Content class="grid grid-cols-3 gap-2">
+				<Button on:click={() => triggerVtuberAction('眨眼')}>
+					<Eye class="mr-2 h-4 w-4" />
+					眨眼
+				</Button>
+				<Button on:click={() => triggerVtuberAction('點頭')}>
+					<Smile class="mr-2 h-4 w-4" />
+					點頭
+				</Button>
+				<Button on:click={() => triggerVtuberAction('搖頭')}>
+					<Frown class="mr-2 h-4 w-4" />
+					搖頭
+				</Button>
+			</Card.Content>
+			<Card.Footer class="text-sm text-gray-500">
+				當前狀態: 
+				{#if $vtuberStatus.blink} 眨眼中 {/if}
+				{#if $vtuberStatus.nod} 點頭中 {/if}
+				{#if $vtuberStatus.shake_head} 搖頭中 {/if}
+			</Card.Footer>
+		</Card.Root>
 	</div>
 </div>
+
+<style>
+	/* 保留原有樣式 */
+	textarea {
+		min-height: 100px;
+	}
+</style>

@@ -3,7 +3,7 @@
 	import { Button } from "$lib/components/ui/button";
 	import {RefreshCcw} from "lucide-svelte";
 
-	import { socket, hotkeys } from "../socketio";
+	import { socket, hotkeys } from "../../lib/socketio";
 
 	// Request list of Hotkeys
 	function getHotkeys() {
