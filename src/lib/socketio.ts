@@ -1,252 +1,245 @@
-import { writable } from 'svelte/store';
+import { writable, type Writable } from 'svelte/store';
 import { io, type Socket } from 'socket.io-client';
 import { toast } from 'svelte-sonner';
+import { browser } from '$app/environment';
 
 // ====================== 型別宣告 ======================
 interface SocketEvents {
   // 基礎事件
-  "error": (data: string) => void;
-  "connect": () => void;
-  "disconnect": (reason: string) => void;
-  "connect_error": (err: Error) => void;
+  'error': (data: string) => void;
+  'connect': () => void;
+  'disconnect': (reason: string) => void;
+  'connect_error': (err: Error) => void;
 
   // 中文支持事件
-  "chinese_text": (data: { text: string }) => void;
-  "chinese_response": (data: { text: string }) => void;
-  "vtuber_action": (action: string) => void;
-  "action_feedback": (data: { action: string; status: string }) => void;
+  'chinese_text': (data: { text: string }) => void;
+  'chinese_response': (data: { text: string }) => void;
+  'vtuber_action': (action: string) => void;
+  'action_feedback': (data: { action: string; status: 'executed' | 'failed' }) => void;
 
-  // 原始事件（完全保留）
-  "current_message": (message: string) => void;
-  "reset_next_message": () => void;
-  "next_chunk": (message: string) => void;
-  "AI_thinking": (message: boolean) => void;
-  "AI_speaking": (message: boolean) => void;
-  "human_speaking": (message: boolean) => void;
-  "patience_update": (message: { crr_time: number; total_time: number }) => void;
-  "recent_twitch_messages": (message: string[]) => void;
-  "twitch_status": (message: boolean) => void;
-  "LLM_status": (message: boolean) => void;
-  "TTS_status": (message: boolean) => void;
-  "STT_status": (message: boolean) => void;
-  "movement_status": (message: boolean) => void;
-  "multimodal_status": (message: boolean) => void;
-  "audio_list": (message: string[]) => void;
-  "full_prompt": (message: string) => void;
-  "get_custom_prompt": (message: { prompt: string; priority: number }) => void;
-  "get_memories": (data: any[]) => void;
-  "get_blacklist": (data: string[]) => void;
-  "get_hotkeys": (data: any[]) => void;
+  // 系統狀態事件
+  'current_message': (message: string) => void;
+  'next_chunk': (message: string) => void;
+  'AI_thinking': (state: boolean) => void;
+  'AI_speaking': (state: boolean) => void;
+  // ...其他事件類型...
 }
 
-// ====================== Socket 初始化 ======================
-export const socket: Socket<SocketEvents> = io("http://localhost:8080", {
-  reconnection: true,
-  reconnectionAttempts: 5,
-  reconnectionDelay: 1000,
-  transports: ["websocket"],
-  autoConnect: true
-});
-
-// ====================== 錯誤處理 ======================
-socket.on("error", (data) => {
-  toast.error(`Socket錯誤: ${data}`);
-});
-
-socket.on("connect_error", (err) => {
-  console.error("連接失敗:", err.message);
-  toast.error(`連接失敗: ${err.message}`);
-});
-
-socket.on("disconnect", (reason) => {
-  console.warn("連接斷開:", reason);
-  if (reason === "io server disconnect") {
-    toast.warning("伺服器主動斷開連接");
-  }
-});
-
-// ====================== 中文消息支援 ======================
-export const chineseMessage = writable("");
-export const chineseResponse = writable("");
-
-socket.on("chinese_response", (data) => {
-  chineseResponse.set(data.text);
-  console.log("AI回復:", data.text);
-});
-
-// ====================== VTuber 控制支援 ======================
-export const vtuberStatus = writable<{
+// ====================== Store 類型 ======================
+interface VtuberStatus {
   blink: boolean;
   nod: boolean;
   shake_head: boolean;
   [key: string]: boolean;
-}>({
+}
+
+interface AudioItem {
+  value: string;
+  label: string;
+}
+
+// ====================== Socket 初始化 ======================
+const SOCKET_URL = browser 
+  ? import.meta.env.VITE_SOCKET_URL || 'http://localhost:8080'
+  : '';
+
+export const socket: Socket<SocketEvents> = io(SOCKET_URL, {
+  reconnection: true,
+  reconnectionAttempts: Infinity, // 無限重試
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  randomizationFactor: 0.5,
+  timeout: 20000,
+  transports: ['websocket'],
+  autoConnect: browser, // 僅在流覽器環境自動連接
+  withCredentials: true,
+  extraHeaders: {
+    'X-Client-Type': 'neurofrontend'
+  }
+});
+
+// ====================== 狀態存儲 ======================
+export const socketConnected = writable(false);
+export const socketError = writable<string | null>(null);
+
+// 中文聊天
+export const chineseMessages = writable<Array<{
+  text: string;
+  isUser: boolean;
+  timestamp: Date;
+}>>([]);
+
+// VTuber 控制
+export const vtuberStatus: Writable<VtuberStatus> = writable({
   blink: false,
   nod: false,
   shake_head: false
 });
 
-socket.on("action_feedback", (data) => {
-  vtuberStatus.update(status => ({
-    ...status,
-    [data.action]: data.status === "executed"
-  }));
-  console.log(`動作 ${data.action} 執行狀態: ${data.status}`);
-});
-
-// ====================== 原始狀態管理（完全保留） ======================
-
-// 當前消息部分
-export const currentMessage = writable("");
-socket.on("current_message", (message) => {
-  currentMessage.set(message);
-});
-
-// 下一個消息部分
-export const nextMessage = writable("");
-socket.on("reset_next_message", () => {
-  nextMessage.set("");
-});
-socket.on("next_chunk", (message) => {
-  nextMessage.update(n => n + message);
-});
-
-// 信號部分
+// 系統狀態
+export const currentMessage = writable('');
+export const nextMessage = writable('');
 export const AI_thinking = writable(false);
-socket.on("AI_thinking", (message) => {
-  AI_thinking.set(message);
-});
-
 export const AI_speaking = writable(false);
-socket.on("AI_speaking", (message) => {
-  AI_speaking.set(message);
-});
-
 export const human_speaking = writable(false);
-socket.on("human_speaking", (message) => {
-  human_speaking.set(message);
-});
-
 export const patiencePercent = writable(0);
 export const total_time = writable(0);
-socket.on("patience_update", (message) => {
-  patiencePercent.set((message.crr_time / message.total_time) * 100);
-  total_time.set(message.total_time);
-});
 
-// Twitch 聊天部分
-export const twitchChat = writable("");
-export const twitchChatEnabled = writable(true);
-socket.on("recent_twitch_messages", (message) => {
-  twitchChat.set(message.join("\n"));
-});
-socket.on("twitch_status", (message) => {
-  twitchChatEnabled.set(message);
-});
-
-// 控制部分
+// 模組開關
 export const LLMEnabled = writable(true);
 export const TTSEnabled = writable(true);
 export const STTEnabled = writable(true);
 export const movementEnabled = writable(true);
 export const multimodalEnabled = writable(true);
-socket.on("LLM_status", (message) => {
-  LLMEnabled.set(message);
-});
-socket.on("TTS_status", (message) => {
-  TTSEnabled.set(message);
-});
-socket.on("STT_status", (message) => {
-  STTEnabled.set(message);
-});
-socket.on("movement_status", (message) => {
-  movementEnabled.set(message);
-});
-socket.on("multimodal_status", (message) => {
-  multimodalEnabled.set(message);
-});
+export const twitchChatEnabled = writable(false);
 
-// 音訊部分
-export const selectedAudio = writable<any>(null);
-export const songs = writable([{ value: "", label: "Loading..." }]);
-socket.on("audio_list", (message) => {
-  const songList = message.map((song: string) => ({
-    value: song,
-    label: song
-  }));
-  songs.set(songList);
-});
+// 音訊控制
+export const selectedAudio: Writable<string | null> = writable(null);
+export const songs: Writable<AudioItem[]> = writable([]);
+export const twitchChat = writable('');
 
-// Lobotomy 部分
-export const lobotomy = writable("");
-socket.on("full_prompt", (message) => {
-  lobotomy.set(message);
-});
+// ====================== 事件綁定 ======================
+const bindSocketEvents = () => {
+  // 連接狀態
+  socket.on('connect', () => {
+    socketConnected.set(true);
+    socketError.set(null);
+    toast.success('已連接到伺服器');
+  });
 
-// 自訂提示部分
-export const priority = writable(200);
-export const customPrompt = writable("");
-socket.on("get_custom_prompt", (message) => {
-  customPrompt.set(message.prompt);
-  priority.set(message.priority);
-});
+  socket.on('disconnect', (reason) => {
+    socketConnected.set(false);
+    console.warn('連接斷開:', reason);
+    
+    if (reason === 'io server disconnect') {
+      toast.warning('伺服器主動斷開連接');
+    }
+  });
 
-// 記憶部分
-export const memories = writable<any[]>([]);
-export const searchQuery = writable("");
-socket.on("get_memories", (data) => {
-  memories.set(data);
-});
+  socket.on('connect_error', (err) => {
+    socketError.set(err.message);
+    toast.error(`連接錯誤: ${err.message}`);
+  });
 
-// 審核部分
-export const blacklist = writable("");
-socket.on("get_blacklist", (data) => {
-  blacklist.set(data.join("\n"));
-});
+  // 中文消息處理
+  socket.on('chinese_response', (data) => {
+    chineseMessages.update(messages => [
+      ...messages,
+      {
+        text: data.text,
+        isUser: false,
+        timestamp: new Date()
+      }
+    ]);
+  });
 
-// VTuber 控制部分
-export const hotkeys = writable<any[]>([]);
-socket.on("get_hotkeys", (data) => {
-  hotkeys.set(data);
-});
+  // VTuber 動作回饋
+  socket.on('action_feedback', (data) => {
+    vtuberStatus.update(status => ({
+      ...status,
+      [data.action]: data.status === 'executed'
+    }));
+    
+    if (data.status === 'failed') {
+      toast.error(`動作執行失敗: ${data.action}`);
+    }
+  });
+
+  // 系統狀態更新
+  socket.on('current_message', (msg) => currentMessage.set(msg));
+  socket.on('next_chunk', (chunk) => nextMessage.update(prev => prev + chunk));
+  socket.on('AI_thinking', (state) => AI_thinking.set(state));
+  socket.on('AI_speaking', (state) => AI_speaking.set(state));
+  socket.on('human_speaking', (state) => human_speaking.set(state));
+  
+  socket.on('patience_update', ({ crr_time, total_time: total }) => {
+    patiencePercent.set((crr_time / total) * 100);
+    total_time.set(total);
+  });
+
+  // 模組狀態同步
+  socket.on('LLM_status', (state) => LLMEnabled.set(state));
+  socket.on('TTS_status', (state) => TTSEnabled.set(state));
+  socket.on('STT_status', (state) => STTEnabled.set(state));
+  socket.on('movement_status', (state) => movementEnabled.set(state));
+  socket.on('multimodal_status', (state) => multimodalEnabled.set(state));
+  socket.on('twitch_status', (state) => twitchChatEnabled.set(state));
+
+  // 音訊列表更新
+  socket.on('audio_list', (files) => {
+    songs.set(files.map(file => ({
+      value: file,
+      label: file.replace(/\.[^/.]+$/, '') // 移除文件副檔名
+    })));
+  });
+
+  // Twitch 消息處理
+  socket.on('recent_twitch_messages', (messages) => {
+    twitchChat.set(messages.join('\n'));
+  });
+};
 
 // ====================== 工具函數 ======================
 export const sendChineseText = (text: string) => {
-  if (text.trim()) {
-    socket.emit("chinese_text", { text });
-    chineseMessage.set(text);
-    console.log("已發送中文消息:", text);
-  }
+  if (!text.trim()) return;
+  
+  socket.emit('chinese_text', { text });
+  chineseMessages.update(messages => [
+    ...messages,
+    {
+      text,
+      isUser: true,
+      timestamp: new Date()
+    }
+  ]);
 };
 
 export const triggerVtuberAction = (action: string) => {
   const actionMap: Record<string, string> = {
-    "眨眼": "blink",
-    "點頭": "nod",
-    "搖頭": "shake_head"
+    '眨眼': 'blink',
+    '點頭': 'nod',
+    '搖頭': 'shake_head'
   };
   
   const command = actionMap[action] || action;
-  socket.emit("vtuber_action", command);
-  console.log("已觸發VTuber動作:", command);
+  socket.emit('vtuber_action', command);
 };
 
-// ====================== 連接管理 ======================
-export const manualConnect = () => {
+export const toggleModule = (module: string, enabled: boolean) => {
+  const moduleMap: Record<string, string> = {
+    'LLM': '語言模型',
+    'TTS': '語音合成',
+    'STT': '語音辨識',
+    'movement': '動作捕捉',
+    'multimodal': '多模態輸入',
+    'twitch': 'Twitch 聊天'
+  };
+  
+  socket.emit(`${enabled ? 'enable' : 'disable'}_${module.toLowerCase()}`);
+  toast.success(`${moduleMap[module]} ${enabled ? '已啟用' : '已禁用'}`);
+};
+
+// ====================== 生命週期管理 ======================
+if (browser) {
+  bindSocketEvents();
+  
+  // 開發調試用
+  if (import.meta.env.DEV) {
+    (window as any).socket = socket;
+  }
+}
+
+// ====================== 連接控制 ======================
+export const reconnectSocket = () => {
   if (socket.disconnected) {
     socket.connect();
-    toast.info("正在手動連接Socket...");
+  } else {
+    socket.disconnect().connect();
   }
 };
 
-export const manualDisconnect = () => {
+export const disconnectSocket = () => {
   if (socket.connected) {
     socket.disconnect();
-    toast.warning("已手動斷開Socket連接");
   }
 };
-
-// 開發調試用：將socket實例掛載到window
-if (import.meta.env.DEV) {
-  (window as any).socket = socket;
-}

@@ -34,6 +34,7 @@
     --ring: 240 5% 64.9%;
 
     --radius: 0.5rem;
+    --font-cn: 'Noto Sans SC', sans-serif;
   }
 
   .dark {
@@ -73,6 +74,7 @@
     @apply border-border;
   }
   body {
+    font-family: var(--font-cn), var(--font-sans);
     @apply bg-background text-foreground;
     font-feature-settings:
             "rlig" 1,
